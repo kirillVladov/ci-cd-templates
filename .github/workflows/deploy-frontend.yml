@@ -20,9 +20,9 @@ on:
         required: true
 
 
-# # env:
-# #   REGISTRY: ghcr.io
-# #   IMAGE_NAME: kirillvladov/nod-web
+env:
+  REGISTRY: inputs.REGISTRY
+  IMAGE_NAME: inputs.IMAGE_NAME  
 
 jobs:
 #  test:
