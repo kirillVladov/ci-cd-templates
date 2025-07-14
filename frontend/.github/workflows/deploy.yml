@@ -1,0 +1,275 @@
+name: Deploy to Kubernetes
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - prod
+
+# env:
+#   REGISTRY: ghcr.io
+#   IMAGE_NAME: kirillvladov/nod-web
+
+jobs:
+#  test:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - name: Checkout code
+#      uses: actions/checkout@v4
+#
+#    - name: Setup Node.js
+#      uses: actions/setup-node@v4
+#      with:
+#        node-version: '18'
+#        cache: 'npm'
+#
+#    - name: Install dependencies
+#      run: npm ci
+#
+#    - name: Run tests
+#      run: npm run test || echo "No tests configured"
+#
+#    - name: Run linting
+#      run: npm run lint
+
+  build:
+#    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' || github.event.inputs.environment == 'dev'
+    environment: development
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'latest'
+
+    - name: Configure kubectl
+      run: |
+        if [ -z "${{ secrets.KUBE_CONFIG_DEV }}" ]; then
+          echo "❌ KUBE_CONFIG_DEV secret is not set"
+          echo "Please add KUBE_CONFIG_DEV secret to your repository"
+          echo "Settings → Secrets and variables → Actions"
+          exit 1
+        fi
+        
+        echo "${{ secrets.KUBE_CONFIG_DEV }}" | base64 -d > kubeconfig
+        chmod 600 kubeconfig
+        echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
+        
+        echo "Kubeconfig file size: $(wc -c < kubeconfig) bytes"
+        if [ $(wc -c < kubeconfig) -lt 100 ]; then
+          echo "❌ Kubeconfig file is too small, check your secret"
+          exit 1
+        fi
+        
+        echo "Kubeconfig first 200 chars:"
+        head -c 200 kubeconfig
+        echo ""
+        echo "Checking kubectl config:"
+        kubectl config view --minify || echo "Failed to view config"
+
+    - name: Clean up existing namespace (if needed)
+      run: |
+        echo "🧹 Checking for existing namespace..."
+        if kubectl get namespace nod-web &> /dev/null; then
+          echo "📁 Found existing namespace, cleaning up resources..."
+          kubectl delete all --all -n nod-web --ignore-not-found=true
+          kubectl delete pvc --all -n nod-web --ignore-not-found=true
+          kubectl delete configmap --all -n nod-web --ignore-not-found=true
+          kubectl delete secret --all -n nod-web --ignore-not-found=true
+          kubectl delete serviceaccount --all -n nod-web --ignore-not-found=true
+          echo "✅ Namespace resources cleaned up"
+        else
+          echo "✅ No existing namespace found"
+        fi
+
+    - name: Create image pull secret
+      env:
+        GH_USERNAME: ${{ secrets.GH_USERNAME }}
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      run: |
+        cd k8s/helm
+        chmod +x create-image-pull-secret.sh
+        ./create-image-pull-secret.sh
+
+    - name: Set short SHA
+      run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+    - name: Deploy to development
+      run: |
+        echo "🚀 Starting deployment..."
+        echo "📋 Environment variables:"
+        echo "  REGISTRY: ${{ env.REGISTRY }}"
+        echo "  IMAGE_NAME: ${{ env.IMAGE_NAME }}"
+        echo "  GITHUB_SHA: ${{ github.sha }}"
+        
+        echo "📁 Checking namespace status before deployment..."
+        kubectl get namespace nod-web --ignore-not-found=true || echo "Namespace does not exist"
+        
+        echo "🔍 Debug: Current directory before cd: $(pwd)"
+        cd k8s/helm
+        echo "🔍 Debug: Current directory after cd: $(pwd)"
+        echo "🔍 Debug: Listing files in current directory:"
+        ls -la
+        echo "🔍 Debug: Checking if deploy.sh exists:"
+        ls -la deploy.sh || echo "deploy.sh not found"
+        
+        chmod +x deploy.sh
+        ./deploy.sh -e dev -r nod-web -n nod-web -s --force -- \
+          --set image.tag=dev-$SHORT_SHA
+
+    - name: Verify deployment
+      run: |
+        kubectl wait --for=condition=available --timeout=300s deployment/nod-web -n nod-web
+
+  deploy-prod:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || github.event.inputs.environment == 'prod'
+    environment: production
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'latest'
+
+    - name: Configure kubectl
+      run: |
+        if [ -z "${{ secrets.KUBE_CONFIG_PROD }}" ]; then
+          echo "❌ KUBE_CONFIG_PROD secret is not set"
+          echo "Please add KUBE_CONFIG_PROD secret to your repository"
+          echo "Settings → Secrets and variables → Actions"
+          exit 1
+        fi
+        
+        echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > kubeconfig
+        chmod 600 kubeconfig
+        echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
+        
+        echo "Kubeconfig file size: $(wc -c < kubeconfig) bytes"
+        if [ $(wc -c < kubeconfig) -lt 100 ]; then
+          echo "❌ Kubeconfig file is too small, check your secret"
+          exit 1
+        fi
+        
+        echo "Kubeconfig first 200 chars:"
+        head -c 200 kubeconfig
+        echo ""
+        echo "Checking kubectl config:"
+        kubectl config view --minify || echo "Failed to view config"
+
+    - name: Clean up existing namespace (if needed)
+      run: |
+        echo "🧹 Checking for existing namespace..."
+        if kubectl get namespace nod-web-prod &> /dev/null; then
+          echo "📁 Found existing namespace, cleaning up resources..."
+          kubectl delete all --all -n nod-web-prod --ignore-not-found=true
+          kubectl delete pvc --all -n nod-web-prod --ignore-not-found=true
+          kubectl delete configmap --all -n nod-web-prod --ignore-not-found=true
+          kubectl delete secret --all -n nod-web-prod --ignore-not-found=true
+          kubectl delete serviceaccount --all -n nod-web-prod --ignore-not-found=true
+          echo "✅ Namespace resources cleaned up"
+        else
+          echo "✅ No existing namespace found"
+        fi
+    - name: Create image pull secret
+      env:
+        GH_USERNAME: ${{ secrets.GH_USERNAME }}
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      run: |
+        cd k8s/helm
+        chmod +x create-image-pull-secret.sh
+        ./create-image-pull-secret.sh
+    - name: Set short SHA
+      run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+    - name: Deploy to production
+      run: |
+        echo "🔍 Debug: Current directory before cd: $(pwd)"
+        cd k8s/helm
+        echo "🔍 Debug: Current directory after cd: $(pwd)"
+        echo "🔍 Debug: Listing files in current directory:"
+        ls -la
+        echo "🔍 Debug: Checking if deploy.sh exists:"
+        ls -la deploy.sh || echo "deploy.sh not found"
+        
+        chmod +x deploy.sh
+        ./deploy.sh -e prod -r nod-web-prod -n nod-web-prod -s --force -- \
+          --set image.tag=$SHORT_SHA
+
+    - name: Verify deployment
+      run: |
+        kubectl wait --for=condition=available --timeout=300s deployment/nod-web-prod -n nod-web-prod
+
+    - name: Notify deployment
+      if: success()
+      run: |
+        echo "🚀 Production deployment completed successfully!"
+        echo "Version: ${{ github.sha }}"
+        echo "Environment: Production"
