@@ -153,8 +153,8 @@ jobs:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
         cd k8s/helm
-        chmod +x create-image-pull-secret.sh
-        ./create-image-pull-secret.sh
+        chmod +x ../../create-image-pull-secret.sh
+        ../../create-image-pull-secret.sh
 
     - name: Set short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
@@ -249,8 +249,8 @@ jobs:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
         cd k8s/helm
-        chmod +x create-image-pull-secret.sh
-        ./create-image-pull-secret.sh
+        chmod +x ../../create-image-pull-secret.sh
+        ../../create-image-pull-secret.sh
     - name: Set short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
     - name: Deploy to production
@@ -261,10 +261,10 @@ jobs:
         echo "🔍 Debug: Listing files in current directory:"
         ls -la
         echo "🔍 Debug: Checking if deploy.sh exists:"
-        ls -la deploy.sh || echo "deploy.sh not found"
+        ls -la ../../deploy.sh || echo "deploy.sh not found"
         
-        chmod +x deploy.sh
-        ./deploy.sh -e prod -r nod-web-prod -n nod-web-prod -s --force -- \
+        chmod +x ../../deploy.sh
+        ../../deploy.sh -e prod -r nod-web-prod -n nod-web-prod -s --force -- \
           --set image.tag=$SHORT_SHA
 
     - name: Verify deployment
