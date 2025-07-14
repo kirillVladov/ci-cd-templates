@@ -139,13 +139,13 @@ jobs:
     - name: Clean up existing namespace (if needed)
       run: |
         echo "🧹 Checking for existing namespace..."
-        if kubectl get namespace nod-web &> /dev/null; then
+        if kubectl get namespace ${{ env.NAMESPACE }} &> /dev/null; then
           echo "📁 Found existing namespace, cleaning up resources..."
-          kubectl delete all --all -n nod-web --ignore-not-found=true
-          kubectl delete pvc --all -n nod-web --ignore-not-found=true
-          kubectl delete configmap --all -n nod-web --ignore-not-found=true
-          kubectl delete secret --all -n nod-web --ignore-not-found=true
-          kubectl delete serviceaccount --all -n nod-web --ignore-not-found=true
+          kubectl delete all --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete configmap --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete secret --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete serviceaccount --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
           echo "✅ Namespace resources cleaned up"
         else
           echo "✅ No existing namespace found"
@@ -189,8 +189,8 @@ jobs:
         echo "🚀 Starting deployment..."
         echo "📋 Configuration:"
         echo "  Environment: dev"
-        echo "  Release: nod-web"
-        echo "  Namespace: nod-web"
+        echo "  Release: ${{ env.NAMESPACE }}"
+        echo "  Namespace: ${{ env.NAMESPACE }}"
         echo "  Image tag: dev-$SHORT_SHA"
         
         # Validate environment
@@ -224,7 +224,7 @@ jobs:
         echo "✅ Connected to cluster successfully"
         
         # Build Helm command
-        HELM_CMD="helm upgrade --install nod-web ./nod-web \
+        HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} ./${{ env.NAMESPACE }} \
             --namespace ${{ env.NAMESPACE }} \
             --values $VALUES_FILE \
             --create-namespace \
@@ -237,7 +237,7 @@ jobs:
         
         # Validate chart before deployment
         echo "🔍 Validating chart..."
-        helm lint ./nod-web || {
+        helm lint ./${{ env.NAMESPACE }} || {
           echo "❌ Chart validation failed"
           exit 1
         }
@@ -246,7 +246,7 @@ jobs:
         
         # Show namespace status before deployment
         echo "📁 Checking namespace status before deployment..."
-        kubectl get namespace nod-web --ignore-not-found=true || echo "Namespace does not exist yet"
+        kubectl get namespace ${{ env.NAMESPACE }} --ignore-not-found=true || echo "Namespace does not exist yet"
         
         # Execute Helm command
         echo "🔧 Executing Helm command..."
@@ -257,26 +257,26 @@ jobs:
         if [ $HELM_EXIT_CODE -ne 0 ]; then
           echo "🔍 Helm deployment failed. Checking for issues..."
           echo "📋 Checking namespace resources:"
-          kubectl get all -n nod-web || echo "No resources found"
+          kubectl get all -n ${{ env.NAMESPACE }} || echo "No resources found"
           echo "📋 Checking events:"
-          kubectl get events -n nod-web --sort-by='.lastTimestamp' || echo "No events found"
+          kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.lastTimestamp' || echo "No events found"
           echo "📋 Checking pod logs:"
-          kubectl logs -n nod-web -l app.kubernetes.io/name=nod-web --tail=50 || echo "No logs found"
+          kubectl logs -n ${{ env.NAMESPACE }} -l app.kubernetes.io/name=${{ env.NAMESPACE }} --tail=50 || echo "No logs found"
           echo "📋 Checking pod status:"
-          kubectl get pods -n nod-web -o wide || echo "No pods found"
+          kubectl get pods -n ${{ env.NAMESPACE }} -o wide || echo "No pods found"
           echo "📋 Checking deployment status:"
-          kubectl describe deployment -n nod-web $(kubectl get deployment -n nod-web -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || echo "No deployment found"
+          kubectl describe deployment -n ${{ env.NAMESPACE }} $(kubectl get deployment -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || echo "No deployment found"
           exit 1
         fi
         
         echo "✅ Deployment successful!"
         echo "📊 Check status with:"
-        echo "  kubectl get pods -n nod-web"
-        echo "  kubectl get svc -n nod-web"
-        echo "  helm list -n nod-web"
+        echo "  kubectl get pods -n ${{ env.NAMESPACE }}"
+        echo "  kubectl get svc -n ${{ env.NAMESPACE }}"
+        echo "  helm list -n ${{ env.NAMESPACE }}"
         
         # Show service URL if available
-        SERVICE_URL=$(kubectl get svc -n nod-web -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+        SERVICE_URL=$(kubectl get svc -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
         if [ ! -z "$SERVICE_URL" ]; then
           echo "🌐 Service URL: http://$SERVICE_URL"
         fi
@@ -285,12 +285,12 @@ jobs:
         echo "📋 Deployment Info:"
         echo "  Image tag: dev-$SHORT_SHA"
         echo "  Environment: dev"
-        echo "  Namespace: nod-web"
-        echo "  Release: nod-web"
+        echo "  Namespace: ${{ env.NAMESPACE }}"
+        echo "  Release: ${{ env.NAMESPACE }}"
 
     - name: Verify deployment
       run: |
-        kubectl wait --for=condition=available --timeout=300s deployment/nod-web -n nod-web
+        kubectl wait --for=condition=available --timeout=300s deployment/${{ env.NAMESPACE }} -n ${{ env.NAMESPACE }}
 
   deploy-prod:
     needs: build
@@ -339,13 +339,13 @@ jobs:
     - name: Clean up existing namespace (if needed)
       run: |
         echo "🧹 Checking for existing namespace..."
-        if kubectl get namespace nod-web-prod &> /dev/null; then
+        if kubectl get namespace ${{ env.NAMESPACE }} &> /dev/null; then
           echo "📁 Found existing namespace, cleaning up resources..."
-          kubectl delete all --all -n nod-web-prod --ignore-not-found=true
-          kubectl delete pvc --all -n nod-web-prod --ignore-not-found=true
-          kubectl delete configmap --all -n nod-web-prod --ignore-not-found=true
-          kubectl delete secret --all -n nod-web-prod --ignore-not-found=true
-          kubectl delete serviceaccount --all -n nod-web-prod --ignore-not-found=true
+          kubectl delete all --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete configmap --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete secret --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete serviceaccount --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
           echo "✅ Namespace resources cleaned up"
         else
           echo "✅ No existing namespace found"
@@ -388,8 +388,8 @@ jobs:
         echo "🚀 Starting deployment..."
         echo "📋 Configuration:"
         echo "  Environment: prod"
-        echo "  Release: nod-web-prod"
-        echo "  Namespace: nod-web-prod"
+        echo "  Release: ${{ env.NAMESPACE }}"
+        echo "  Namespace: ${{ env.NAMESPACE }}"
         echo "  Image tag: $SHORT_SHA"
         
         # Validate environment
@@ -423,7 +423,7 @@ jobs:
         echo "✅ Connected to cluster successfully"
         
         # Build Helm command
-        HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} ./nod-web \
+        HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} ./${{ env.NAMESPACE }} \
             --namespace ${{ env.NAMESPACE }} \
             --values $VALUES_FILE \
             --create-namespace \
@@ -436,7 +436,7 @@ jobs:
         
         # Validate chart before deployment
         echo "🔍 Validating chart..."
-        helm lint ./nod-web || {
+        helm lint ./${{ env.NAMESPACE }} || {
           echo "❌ Chart validation failed"
           exit 1
         }
@@ -445,7 +445,7 @@ jobs:
         
         # Show namespace status before deployment
         echo "📁 Checking namespace status before deployment..."
-        kubectl get namespace nod-web-prod --ignore-not-found=true || echo "Namespace does not exist yet"
+        kubectl get namespace ${{ env.NAMESPACE }} --ignore-not-found=true || echo "Namespace does not exist yet"
         
         # Execute Helm command
         echo "🔧 Executing Helm command..."
@@ -456,26 +456,26 @@ jobs:
         if [ $HELM_EXIT_CODE -ne 0 ]; then
           echo "🔍 Helm deployment failed. Checking for issues..."
           echo "📋 Checking namespace resources:"
-          kubectl get all -n nod-web-prod || echo "No resources found"
+          kubectl get all -n ${{ env.NAMESPACE }} || echo "No resources found"
           echo "📋 Checking events:"
-          kubectl get events -n nod-web-prod --sort-by='.lastTimestamp' || echo "No events found"
+          kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.lastTimestamp' || echo "No events found"
           echo "📋 Checking pod logs:"
-          kubectl logs -n nod-web-prod -l app.kubernetes.io/name=nod-web --tail=50 || echo "No logs found"
+          kubectl logs -n ${{ env.NAMESPACE }} -l app.kubernetes.io/name=${{ env.NAMESPACE }} --tail=50 || echo "No logs found"
           echo "📋 Checking pod status:"
-          kubectl get pods -n nod-web-prod -o wide || echo "No pods found"
+          kubectl get pods -n ${{ env.NAMESPACE }} -o wide || echo "No pods found"
           echo "📋 Checking deployment status:"
-          kubectl describe deployment -n nod-web-prod $(kubectl get deployment -n nod-web-prod -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || echo "No deployment found"
+          kubectl describe deployment -n ${{ env.NAMESPACE }} $(kubectl get deployment -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || echo "No deployment found"
           exit 1
         fi
         
         echo "✅ Deployment successful!"
         echo "📊 Check status with:"
-        echo "  kubectl get pods -n nod-web-prod"
-        echo "  kubectl get svc -n nod-web-prod"
-        echo "  helm list -n nod-web-prod"
+        echo "  kubectl get pods -n ${{ env.NAMESPACE }}"
+        echo "  kubectl get svc -n ${{ env.NAMESPACE }}"
+        echo "  helm list -n ${{ env.NAMESPACE }}"
         
         # Show service URL if available
-        SERVICE_URL=$(kubectl get svc -n nod-web-prod -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+        SERVICE_URL=$(kubectl get svc -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
         if [ ! -z "$SERVICE_URL" ]; then
           echo "🌐 Service URL: http://$SERVICE_URL"
         fi
@@ -484,11 +484,11 @@ jobs:
         echo "📋 Deployment Info:"
         echo "  Image tag: $SHORT_SHA"
         echo "  Environment: prod"
-        echo "  Release: nod-web-prod"
+        echo "  Release: ${{ env.NAMESPACE }}"
 
     - name: Verify deployment
       run: |
-        kubectl wait --for=condition=available --timeout=300s deployment/nod-web-prod -n nod-web-prod
+        kubectl wait --for=condition=available --timeout=300s deployment/${{ env.NAMESPACE }} -n ${{ env.NAMESPACE }}
 
     - name: Notify deployment
       if: success()
