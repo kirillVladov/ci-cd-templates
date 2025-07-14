@@ -152,7 +152,7 @@ jobs:
         GH_USERNAME: ${{ secrets.GH_USERNAME }}
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
-        cd k8s/helm
+        cd ../../
         chmod +x ../../create-image-pull-secret.sh
         ../../create-image-pull-secret.sh
 
@@ -170,7 +170,7 @@ jobs:
         kubectl get namespace nod-web --ignore-not-found=true || echo "Namespace does not exist"
         
         echo "🔍 Debug: Current directory before cd: $(pwd)"
-        cd k8s/helm
+        cd ../../
         echo "🔍 Debug: Current directory after cd: $(pwd)"
         echo "🔍 Debug: Listing files in current directory:"
         ls -la
@@ -248,23 +248,23 @@ jobs:
         GH_USERNAME: ${{ secrets.GH_USERNAME }}
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
-        cd k8s/helm
-        chmod +x ../../create-image-pull-secret.sh
-        ../../create-image-pull-secret.sh
+        cd ../../
+        chmod +x ./create-image-pull-secret.sh
+        ./create-image-pull-secret.sh
     - name: Set short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
     - name: Deploy to production
       run: |
         echo "🔍 Debug: Current directory before cd: $(pwd)"
-        cd k8s/helm
+        cd ../../
         echo "🔍 Debug: Current directory after cd: $(pwd)"
         echo "🔍 Debug: Listing files in current directory:"
         ls -la
         echo "🔍 Debug: Checking if deploy.sh exists:"
-        ls -la ../../deploy.sh || echo "deploy.sh not found"
+        ls -la ./deploy.sh || echo "deploy.sh not found"
         
-        chmod +x ../../deploy.sh
-        ../../deploy.sh -e prod -r nod-web-prod -n nod-web-prod -s --force -- \
+        chmod +x ./deploy.sh
+        ./deploy.sh -e prod -r nod-web-prod -n nod-web-prod -s --force -- \
           --set image.tag=$SHORT_SHA
 
     - name: Verify deployment
