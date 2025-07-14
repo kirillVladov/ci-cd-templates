@@ -1,20 +1,23 @@
 name: Deploy to Kubernetes
 
 on:
-  push:
-    branches: [master, dev]
-  pull_request:
-    branches: [master]
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      environment:
-        description: 'Environment to deploy to'
+      REGISTRY:
         required: true
-        default: 'dev'
-        type: choice
-        options:
-        - dev
-        - prod
+        type: string
+      IMAGE_NAME:
+        required: true
+        type: string
+    secrets:
+      GH_TOKEN:
+        required: true
+      GH_USERNAME:
+        required: true
+      KUBE_CONFIG_DEV:
+        required: true
+      KUBE_CONFIG_PROD:
+        required: true
 
 # # env:
 # #   REGISTRY: ghcr.io
