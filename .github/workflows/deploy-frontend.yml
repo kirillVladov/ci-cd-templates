@@ -246,7 +246,6 @@ jobs:
         GH_USERNAME: ${{ secrets.GH_USERNAME }}
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
-        cd ../../
         chmod +x ./create-image-pull-secret.sh
         ./create-image-pull-secret.sh
     - name: Set short SHA
@@ -254,7 +253,6 @@ jobs:
     - name: Deploy to production
       run: |
         echo "🔍 Debug: Current directory before cd: $(pwd)"
-        cd ../../
         echo "🔍 Debug: Current directory after cd: $(pwd)"
         echo "🔍 Debug: Listing files in current directory:"
         ls -la
