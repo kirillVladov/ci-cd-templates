@@ -3,6 +3,9 @@ name: Deploy to Kubernetes
 on:
   workflow_call:
     inputs:
+      NAMESPACE: 
+        required: true
+        type: string
       REGISTRY:
         required: true
         type: string
@@ -23,6 +26,7 @@ on:
 env:
   REGISTRY: ${{ inputs.REGISTRY }}
   IMAGE_NAME: ${{ inputs.IMAGE_NAME }}  
+  NAMESPACE: ${{ inputs.NAMESPACE }}
 
 jobs:
 #  test:
@@ -152,32 +156,137 @@ jobs:
         GH_USERNAME: ${{ secrets.GH_USERNAME }}
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
-        chmod +x ./create-image-pull-secret.sh
-        ./create-image-pull-secret.sh
+        echo "🔐 Setting up GitHub Container Registry image pull secret..."
 
+        if [ -z "$GH_TOKEN" ]; then
+          echo "❌ GH_TOKEN secret is not set"
+          exit 1
+        fi
+        if [ -z "$GH_USERNAME" ]; then
+          echo "❌ GH_USERNAME secret is not set"
+          exit 1
+        fi
+
+        kubectl create secret docker-registry ghcr-secret \
+          --docker-server=ghcr.io \
+          --docker-username=$GH_USERNAME \
+          --docker-password=$GH_TOKEN \
+          --docker-email=kirillovvlad8@gmail.com \
+          --namespace=${{ env.NAMESPACE }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+        kubectl label secret ghcr-secret -n ${{ env.NAMESPACE }} \
+          "app.kubernetes.io/managed-by=external" \
+          "helm.sh/resource-policy=keep" \
+          --overwrite
+
+        echo "✅ Image pull secret created successfully!"
+        kubectl get secret ghcr-secret -n ${{ env.NAMESPACE }} -o yaml | grep -E "(name:|type:|labels:)" || echo "Secret not found"
     - name: Set short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
     - name: Deploy to development
       run: |
         echo "🚀 Starting deployment..."
-        echo "📋 Environment variables:"
-        echo "  REGISTRY: ${{ env.REGISTRY }}"
-        echo "  IMAGE_NAME: ${{ env.IMAGE_NAME }}"
-        echo "  GITHUB_SHA: ${{ github.sha }}"
+        echo "📋 Configuration:"
+        echo "  Environment: dev"
+        echo "  Release: nod-web"
+        echo "  Namespace: nod-web"
+        echo "  Image tag: dev-$SHORT_SHA"
         
+        # Validate environment
+        if [[ "dev" != "dev" && "dev" != "prod" ]]; then
+          echo "❌ Invalid environment: dev. Use 'dev' or 'prod'."
+          exit 1
+        fi
+        echo "✅ Environment validated: dev"
+        
+        # Set values file based on environment
+        VALUES_FILE="values.dev.yaml"
+        if [[ "$VALUES_FILE" == "values.dev.yaml" && "dev" == "prod" ]]; then
+          VALUES_FILE="values.prod.yaml"
+        fi
+        echo "📁 Using values file: $VALUES_FILE"
+        
+        # Check cluster connection
+        echo "🔍 Checking cluster connection..."
+        CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null)
+        if [ -z "$CURRENT_CONTEXT" ]; then
+          echo "❌ No current context found"
+          kubectl config get-contexts 2>/dev/null || echo "No contexts available"
+          exit 1
+        fi
+        echo "✅ Current context: $CURRENT_CONTEXT"
+        
+        if ! kubectl cluster-info &> /dev/null; then
+          echo "❌ Cannot connect to cluster"
+          exit 1
+        fi
+        echo "✅ Connected to cluster successfully"
+        
+        # Build Helm command
+        HELM_CMD="helm upgrade --install nod-web ./nod-web \
+            --namespace ${{ env.NAMESPACE }} \
+            --values $VALUES_FILE \
+            --create-namespace \
+            --wait \
+            --timeout 10m \
+            --set image.tag=dev-$SHORT_SHA"
+        
+        echo "🔧 Final Helm command:"
+        echo "$HELM_CMD"
+        
+        # Validate chart before deployment
+        echo "🔍 Validating chart..."
+        helm lint ./nod-web || {
+          echo "❌ Chart validation failed"
+          exit 1
+        }
+        
+        echo "Executing: $HELM_CMD"
+        
+        # Show namespace status before deployment
         echo "📁 Checking namespace status before deployment..."
-        kubectl get namespace nod-web --ignore-not-found=true || echo "Namespace does not exist"
+        kubectl get namespace nod-web --ignore-not-found=true || echo "Namespace does not exist yet"
         
-        echo "🔍 Debug: Current directory before cd: $(pwd)"
-        echo "🔍 Debug: Current directory after cd: $(pwd)"
-        echo "🔍 Debug: Listing files in current directory:"
-        ls -la
-        echo "🔍 Debug: Checking if deploy.sh exists:"
-        ls -la deploy.sh || echo "deploy.sh not found"
+        # Execute Helm command
+        echo "🔧 Executing Helm command..."
+        eval $HELM_CMD
+        HELM_EXIT_CODE=$?
         
-        chmod +x deploy.sh
-        ./deploy.sh -e dev -r nod-web -n nod-web -s --force -- \
-          --set image.tag=dev-$SHORT_SHA
+        # If Helm fails, show more debugging info
+        if [ $HELM_EXIT_CODE -ne 0 ]; then
+          echo "🔍 Helm deployment failed. Checking for issues..."
+          echo "📋 Checking namespace resources:"
+          kubectl get all -n nod-web || echo "No resources found"
+          echo "📋 Checking events:"
+          kubectl get events -n nod-web --sort-by='.lastTimestamp' || echo "No events found"
+          echo "📋 Checking pod logs:"
+          kubectl logs -n nod-web -l app.kubernetes.io/name=nod-web --tail=50 || echo "No logs found"
+          echo "📋 Checking pod status:"
+          kubectl get pods -n nod-web -o wide || echo "No pods found"
+          echo "📋 Checking deployment status:"
+          kubectl describe deployment -n nod-web $(kubectl get deployment -n nod-web -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || echo "No deployment found"
+          exit 1
+        fi
+        
+        echo "✅ Deployment successful!"
+        echo "📊 Check status with:"
+        echo "  kubectl get pods -n nod-web"
+        echo "  kubectl get svc -n nod-web"
+        echo "  helm list -n nod-web"
+        
+        # Show service URL if available
+        SERVICE_URL=$(kubectl get svc -n nod-web -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+        if [ ! -z "$SERVICE_URL" ]; then
+          echo "🌐 Service URL: http://$SERVICE_URL"
+        fi
+        
+        # Show deployment info
+        echo "📋 Deployment Info:"
+        echo "  Image tag: dev-$SHORT_SHA"
+        echo "  Environment: dev"
+        echo "  Namespace: nod-web"
+        echo "  Release: nod-web"
 
     - name: Verify deployment
       run: |
@@ -246,22 +355,136 @@ jobs:
         GH_USERNAME: ${{ secrets.GH_USERNAME }}
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
-        chmod +x ./create-image-pull-secret.sh
-        ./create-image-pull-secret.sh
+        echo "🔐 Setting up GitHub Container Registry image pull secret..."
+
+        if [ -z "$GH_TOKEN" ]; then
+          echo "❌ GH_TOKEN secret is not set"
+          exit 1
+        fi
+        if [ -z "$GH_USERNAME" ]; then
+          echo "❌ GH_USERNAME secret is not set"
+          exit 1
+        fi
+
+        kubectl create secret docker-registry ghcr-secret \
+          --docker-server=ghcr.io \
+          --docker-username=$GH_USERNAME \
+          --docker-password=$GH_TOKEN \
+          --docker-email=kirillovvlad8@gmail.com \
+          --namespace=${{ env.NAMESPACE }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+        kubectl label secret ghcr-secret -n ${{ env.NAMESPACE }} \
+          "app.kubernetes.io/managed-by=external" \
+          "helm.sh/resource-policy=keep" \
+          --overwrite
+
+        echo "✅ Image pull secret created successfully!"
+        kubectl get secret ghcr-secret -n ${{ env.NAMESPACE }} -o yaml | grep -E "(name:|type:|labels:)" || echo "Secret not found"
     - name: Set short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
     - name: Deploy to production
       run: |
-        echo "🔍 Debug: Current directory before cd: $(pwd)"
-        echo "🔍 Debug: Current directory after cd: $(pwd)"
-        echo "🔍 Debug: Listing files in current directory:"
-        ls -la
-        echo "🔍 Debug: Checking if deploy.sh exists:"
-        ls -la ./deploy.sh || echo "deploy.sh not found"
+        echo "🚀 Starting deployment..."
+        echo "📋 Configuration:"
+        echo "  Environment: prod"
+        echo "  Release: nod-web-prod"
+        echo "  Namespace: nod-web-prod"
+        echo "  Image tag: $SHORT_SHA"
         
-        chmod +x ./deploy.sh
-        ./deploy.sh -e prod -r nod-web-prod -n nod-web-prod -s --force -- \
-          --set image.tag=$SHORT_SHA
+        # Validate environment
+        if [[ "prod" != "dev" && "prod" != "prod" ]]; then
+          echo "❌ Invalid environment: prod. Use 'dev' or 'prod'."
+          exit 1
+        fi
+        echo "✅ Environment validated: prod"
+        
+        # Set values file based on environment
+        VALUES_FILE="values.dev.yaml"
+        if [[ "$VALUES_FILE" == "values.dev.yaml" && "prod" == "prod" ]]; then
+          VALUES_FILE="values.prod.yaml"
+        fi
+        echo "📁 Using values file: $VALUES_FILE"
+        
+        # Check cluster connection
+        echo "🔍 Checking cluster connection..."
+        CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null)
+        if [ -z "$CURRENT_CONTEXT" ]; then
+          echo "❌ No current context found"
+          kubectl config get-contexts 2>/dev/null || echo "No contexts available"
+          exit 1
+        fi
+        echo "✅ Current context: $CURRENT_CONTEXT"
+        
+        if ! kubectl cluster-info &> /dev/null; then
+          echo "❌ Cannot connect to cluster"
+          exit 1
+        fi
+        echo "✅ Connected to cluster successfully"
+        
+        # Build Helm command
+        HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} ./nod-web \
+            --namespace ${{ env.NAMESPACE }} \
+            --values $VALUES_FILE \
+            --create-namespace \
+            --wait \
+            --timeout 10m \
+            --set image.tag=$SHORT_SHA"
+        
+        echo "🔧 Final Helm command:"
+        echo "$HELM_CMD"
+        
+        # Validate chart before deployment
+        echo "🔍 Validating chart..."
+        helm lint ./nod-web || {
+          echo "❌ Chart validation failed"
+          exit 1
+        }
+        
+        echo "Executing: $HELM_CMD"
+        
+        # Show namespace status before deployment
+        echo "📁 Checking namespace status before deployment..."
+        kubectl get namespace nod-web-prod --ignore-not-found=true || echo "Namespace does not exist yet"
+        
+        # Execute Helm command
+        echo "🔧 Executing Helm command..."
+        eval $HELM_CMD
+        HELM_EXIT_CODE=$?
+        
+        # If Helm fails, show more debugging info
+        if [ $HELM_EXIT_CODE -ne 0 ]; then
+          echo "🔍 Helm deployment failed. Checking for issues..."
+          echo "📋 Checking namespace resources:"
+          kubectl get all -n nod-web-prod || echo "No resources found"
+          echo "📋 Checking events:"
+          kubectl get events -n nod-web-prod --sort-by='.lastTimestamp' || echo "No events found"
+          echo "📋 Checking pod logs:"
+          kubectl logs -n nod-web-prod -l app.kubernetes.io/name=nod-web --tail=50 || echo "No logs found"
+          echo "📋 Checking pod status:"
+          kubectl get pods -n nod-web-prod -o wide || echo "No pods found"
+          echo "📋 Checking deployment status:"
+          kubectl describe deployment -n nod-web-prod $(kubectl get deployment -n nod-web-prod -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || echo "No deployment found"
+          exit 1
+        fi
+        
+        echo "✅ Deployment successful!"
+        echo "📊 Check status with:"
+        echo "  kubectl get pods -n nod-web-prod"
+        echo "  kubectl get svc -n nod-web-prod"
+        echo "  helm list -n nod-web-prod"
+        
+        # Show service URL if available
+        SERVICE_URL=$(kubectl get svc -n nod-web-prod -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+        if [ ! -z "$SERVICE_URL" ]; then
+          echo "🌐 Service URL: http://$SERVICE_URL"
+        fi
+        
+        # Show deployment info
+        echo "📋 Deployment Info:"
+        echo "  Image tag: $SHORT_SHA"
+        echo "  Environment: prod"
+        echo "  Release: nod-web-prod"
 
     - name: Verify deployment
       run: |
