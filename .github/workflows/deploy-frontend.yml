@@ -16,9 +16,9 @@ on:
         - dev
         - prod
 
-# env:
-#   REGISTRY: ghcr.io
-#   IMAGE_NAME: kirillvladov/nod-web
+# # env:
+# #   REGISTRY: ghcr.io
+# #   IMAGE_NAME: kirillvladov/nod-web
 
 jobs:
 #  test:
