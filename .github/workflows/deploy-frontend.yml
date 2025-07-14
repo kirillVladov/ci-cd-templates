@@ -21,8 +21,8 @@ on:
 
 
 env:
-  REGISTRY: inputs.REGISTRY
-  IMAGE_NAME: inputs.IMAGE_NAME  
+  REGISTRY: ${{ inputs.REGISTRY }}
+  IMAGE_NAME: ${{ inputs.IMAGE_NAME }}  
 
 jobs:
 #  test:
