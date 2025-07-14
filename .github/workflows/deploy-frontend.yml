@@ -153,8 +153,8 @@ jobs:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
         cd ../../
-        chmod +x ../../create-image-pull-secret.sh
-        ../../create-image-pull-secret.sh
+        chmod +x ./create-image-pull-secret.sh
+        ./create-image-pull-secret.sh
 
     - name: Set short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
