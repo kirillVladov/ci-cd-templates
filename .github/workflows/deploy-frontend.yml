@@ -192,7 +192,7 @@ jobs:
         echo "  Release: ${{ env.NAMESPACE }}"
         echo "  Namespace: ${{ env.NAMESPACE }}"
         echo "  Image tag: dev-$SHORT_SHA"
-        
+
         # Validate environment
         if [[ "dev" != "dev" && "dev" != "prod" ]]; then
           echo "❌ Invalid environment: dev. Use 'dev' or 'prod'."
@@ -222,9 +222,11 @@ jobs:
           exit 1
         fi
         echo "✅ Connected to cluster successfully"
+
+        cd deploy/helm
         
         # Build Helm command
-        HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} ./deploy/helm \
+        HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} . \
             --namespace ${{ env.NAMESPACE }} \
             --values $VALUES_FILE \
             --create-namespace \
@@ -237,7 +239,7 @@ jobs:
         
         # Validate chart before deployment
         echo "🔍 Validating chart..."
-        helm lint ./deploy/helm || {
+        helm lint . || {
           echo "❌ Chart validation failed"
           exit 1
         }
