@@ -22,6 +22,10 @@ on:
       KUBE_CONFIG_PROD:
         required: true
 
+env:
+  REGISTRY: ${{ inputs.REGISTRY }}
+  IMAGE_NAME: ${{ inputs.IMAGE_NAME }}  
+  NAMESPACE: ${{ inputs.NAMESPACE }}
 
 jobs:
   build:
@@ -40,7 +44,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.GH_USERNAME }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GH_TOKEN }}
 
       - name: Extract metadata
