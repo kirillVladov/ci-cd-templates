@@ -224,7 +224,7 @@ jobs:
         echo "✅ Connected to cluster successfully"
         
         # Build Helm command
-        HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} ./deploy/helm/template \
+        HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} ./deploy/helm \
             --namespace ${{ env.NAMESPACE }} \
             --values $VALUES_FILE \
             --create-namespace \
@@ -237,7 +237,7 @@ jobs:
         
         # Validate chart before deployment
         echo "🔍 Validating chart..."
-        helm lint ./deploy/helm/template || {
+        helm lint ./deploy/helm || {
           echo "❌ Chart validation failed"
           exit 1
         }
