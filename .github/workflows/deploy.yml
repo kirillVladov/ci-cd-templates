@@ -36,6 +36,7 @@ env:
   IMAGE_NAME: ${{ inputs.IMAGE_NAME }}  
   NAMESPACE: ${{ inputs.NAMESPACE }}
   DOCKER_FILE: ${{ inputs.DOCKER_FILE }}
+  KUBE_CONFIG_PATH: ${{ inputs.KUBE_CONFIG_PATH }}
 
 jobs:
 #  test:
