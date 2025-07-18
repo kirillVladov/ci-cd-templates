@@ -12,6 +12,10 @@ on:
       IMAGE_NAME:
         required: true
         type: string
+      DOCKER_FILE:
+        required: false
+        type: string
+        default: ./Dockerfile
     secrets:
       GH_TOKEN:
         required: true
@@ -27,6 +31,7 @@ env:
   REGISTRY: ${{ inputs.REGISTRY }}
   IMAGE_NAME: ${{ inputs.IMAGE_NAME }}  
   NAMESPACE: ${{ inputs.NAMESPACE }}
+  DOCKER_FILE: ${{ inputs.DOCKER_FILE }}
 
 jobs:
 #  test:
@@ -85,7 +90,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./Dockerfile
+        file: ${{env.DOCKER_FILE}}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
@@ -151,6 +156,37 @@ jobs:
           echo "✅ No existing namespace found"
         fi
 
+    - name: Create image pull secret
+      env:
+        GH_USERNAME: ${{ secrets.GH_USERNAME }}
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      run: |
+        echo "🔐 Setting up GitHub Container Registry image pull secret..."
+
+        if [ -z "$GH_TOKEN" ]; then
+          echo "❌ GH_TOKEN secret is not set"
+          exit 1
+        fi
+        if [ -z "$GH_USERNAME" ]; then
+          echo "❌ GH_USERNAME secret is not set"
+          exit 1
+        fi
+
+        kubectl create secret docker-registry ghcr-secret \
+          --docker-server=ghcr.io \
+          --docker-username=$GH_USERNAME \
+          --docker-password=$GH_TOKEN \
+          --docker-email=kirillovvlad8@gmail.com \
+          --namespace=${{ env.NAMESPACE }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+        kubectl label secret ghcr-secret -n ${{ env.NAMESPACE }} \
+          "app.kubernetes.io/managed-by=external" \
+          "helm.sh/resource-policy=keep" \
+          --overwrite
+
+        echo "✅ Image pull secret created successfully!"
+        kubectl get secret ghcr-secret -n ${{ env.NAMESPACE }} -o yaml | grep -E "(name:|type:|labels:)" || echo "Secret not found"
     - name: Set short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
     - name: Deploy to development
@@ -258,37 +294,6 @@ jobs:
         echo "  Environment: dev"
         echo "  Namespace: ${{ env.NAMESPACE }}"
         echo "  Release: ${{ env.NAMESPACE }}"
-    - name: Create image pull secret
-      env:
-        GH_USERNAME: ${{ secrets.GH_USERNAME }}
-        GH_TOKEN: ${{ secrets.GH_TOKEN }}
-      run: |
-        echo "🔐 Setting up GitHub Container Registry image pull secret..."
-
-        if [ -z "$GH_TOKEN" ]; then
-          echo "❌ GH_TOKEN secret is not set"
-          exit 1
-        fi
-        if [ -z "$GH_USERNAME" ]; then
-          echo "❌ GH_USERNAME secret is not set"
-          exit 1
-        fi
-
-        kubectl create secret docker-registry ghcr-secret \
-          --docker-server=ghcr.io \
-          --docker-username=$GH_USERNAME \
-          --docker-password=$GH_TOKEN \
-          --docker-email=kirillovvlad8@gmail.com \
-          --namespace=${{ env.NAMESPACE }} \
-          --dry-run=client -o yaml | kubectl apply -f -
-
-        kubectl label secret ghcr-secret -n ${{ env.NAMESPACE }} \
-          "app.kubernetes.io/managed-by=external" \
-          "helm.sh/resource-policy=keep" \
-          --overwrite
-
-        echo "✅ Image pull secret created successfully!"
-        kubectl get secret ghcr-secret -n ${{ env.NAMESPACE }} -o yaml | grep -E "(name:|type:|labels:)" || echo "Secret not found"
 
     - name: Verify deployment
       run: |
