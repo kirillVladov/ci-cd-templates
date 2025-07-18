@@ -16,6 +16,10 @@ on:
         required: false
         type: string
         default: ./Dockerfile
+      KUBE_CONFIG_PATH:
+        required: false
+        type: string
+        default: deploy/helm
     secrets:
       GH_TOKEN:
         required: true
@@ -228,7 +232,7 @@ jobs:
         fi
         echo "✅ Connected to cluster successfully"
 
-        cd deploy/helm
+        cd ${{ env.KUBE_CONFIG_PATH }}
         
         # Build Helm command
         HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} . \
