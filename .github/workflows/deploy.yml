@@ -146,20 +146,19 @@ jobs:
         echo "Checking kubectl config:"
         kubectl config view --minify || echo "Failed to view config"
 
-    # - name: Clean up existing namespace (if needed)
-    #   run: |
-    #     echo "🧹 Checking for existing namespace..."
-    #     if kubectl get namespace ${{ env.NAMESPACE }} &> /dev/null; then
-    #       echo "📁 Found existing namespace, cleaning up resources..."
-    #       kubectl delete all --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-    #       kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-    #       kubectl delete configmap --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-    #       kubectl delete secret --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-    #       kubectl delete serviceaccount --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-    #       echo "✅ Namespace resources cleaned up"
-    #     else
-    #       echo "✅ No existing namespace found"
-    #     fi
+    - name: Clean up existing namespace (if needed)
+      run: |
+        echo "🧹 Checking for existing namespace..."
+        if kubectl get namespace ${{ env.NAMESPACE }} &> /dev/null; then
+          echo "📁 Found existing namespace, cleaning up resources..."
+          kubectl delete all --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete configmap --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete serviceaccount --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          echo "✅ Namespace resources cleaned up"
+        else
+          echo "✅ No existing namespace found"
+        fi
 
     - name: Create image pull secret
       env:
