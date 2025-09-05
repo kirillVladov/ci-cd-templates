@@ -146,19 +146,19 @@ jobs:
         echo "Checking kubectl config:"
         kubectl config view --minify || echo "Failed to view config"
 
-    - name: Clean up existing namespace (if needed)
-      run: |
-        echo "🧹 Checking for existing namespace..."
-        if kubectl get namespace ${{ env.NAMESPACE }} &> /dev/null; then
-          echo "📁 Found existing namespace, cleaning up resources..."
-          kubectl delete all --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-          kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-          kubectl delete configmap --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-          kubectl delete serviceaccount --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-          echo "✅ Namespace resources cleaned up"
-        else
-          echo "✅ No existing namespace found"
-        fi
+    # - name: Clean up existing namespace (if needed)
+    #   run: |
+    #     echo "🧹 Checking for existing namespace..."
+    #     if kubectl get namespace ${{ env.NAMESPACE }} &> /dev/null; then
+    #       echo "📁 Found existing namespace, cleaning up resources..."
+    #       kubectl delete all --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+    #       kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+    #       kubectl delete configmap --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+    #       kubectl delete serviceaccount --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+    #       echo "✅ Namespace resources cleaned up"
+    #     else
+    #       echo "✅ No existing namespace found"
+    #     fi
 
     - name: Create image pull secret
       env:
@@ -235,13 +235,26 @@ jobs:
         cd ${{ env.KUBE_CONFIG_PATH }}
         
         # Build Helm command
+        # HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} . \
+        #     --namespace ${{ env.NAMESPACE }} \
+        #     --values $VALUES_FILE \
+        #     --create-namespace \
+        #     --wait \
+        #     --timeout 10m \
+        #     --set image.tag=dev-$SHORT_SHA"
+
         HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} . \
-            --namespace ${{ env.NAMESPACE }} \
-            --values $VALUES_FILE \
-            --create-namespace \
-            --wait \
-            --timeout 10m \
-            --set image.tag=dev-$SHORT_SHA"
+        --namespace ${{ env.NAMESPACE }} \
+        --values $VALUES_FILE \
+        --create-namespace \
+        --wait \
+        --timeout 15m \
+        --atomic \
+        --set image.tag=dev-$SHORT_SHA \
+        --set deployment.strategy.type=RollingUpdate \
+        --set deployment.strategy.rollingUpdate.maxSurge=25% \
+        --set deployment.strategy.rollingUpdate.maxUnavailable=0%"
+
         
         echo "🔧 Final Helm command:"
         echo "$HELM_CMD"
