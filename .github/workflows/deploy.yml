@@ -25,8 +25,8 @@ on:
         required: true
       GH_USERNAME:
         required: true
-      KUBE_CONFIG_DEV:
-        required: true
+#      KUBE_CONFIG_DEV:
+#        required: true
       KUBE_CONFIG_PROD:
         required: true
 
