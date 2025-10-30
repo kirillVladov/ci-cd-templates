@@ -411,7 +411,7 @@ jobs:
           echo "  Environment: prod"
           echo "  Release: ${{ env.NAMESPACE }}"
           echo "  Namespace: ${{ env.NAMESPACE }}"
-          echo "  Image tag: prod-$SHORT_SHA"
+          echo "  Image tag: master-$SHORT_SHA"
           
           # Validate environment
           if [[ "dev" != "dev" && "dev" != "prod" ]]; then
@@ -449,7 +449,7 @@ jobs:
           #     --create-namespace \
           #     --wait \
           #     --timeout 10m \
-          #     --set image.tag=prod-$SHORT_SHA"
+          #     --set image.tag=master-$SHORT_SHA"
           
           HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} . \
           --namespace ${{ env.NAMESPACE }} \
@@ -458,7 +458,7 @@ jobs:
           --wait \
           --timeout 15m \
           --atomic \
-          --set image.tag=prod-$SHORT_SHA \
+          --set image.tag=master-$SHORT_SHA \
           --set deployment.strategy.type=RollingUpdate \
           --set deployment.strategy.rollingUpdate.maxSurge=25% \
           --set deployment.strategy.rollingUpdate.maxUnavailable=0%"
@@ -515,7 +515,7 @@ jobs:
           
           # Show deployment info
           echo "📋 Deployment Info:"
-          echo "  Image tag: prod-$SHORT_SHA"
+          echo "  Image tag: master-$SHORT_SHA"
           echo "  Environment: prod"
           echo "  Namespace: ${{ env.NAMESPACE }}"
           echo "  Release: ${{ env.NAMESPACE }}"
