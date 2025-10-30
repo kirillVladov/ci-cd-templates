@@ -215,10 +215,10 @@ jobs:
 #
 #        # Check cluster connection
 #        echo "🔍 Checking cluster connection..."
-#        CURRENT_CONTEXT=$(kubectl config current-context 2>/prod/null)
+#        CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null)
 #        if [ -z "$CURRENT_CONTEXT" ]; then
 #          echo "❌ No current context found"
-#          kubectl config get-contexts 2>/prod/null || echo "No contexts available"
+#          kubectl config get-contexts 2>/dev/null || echo "No contexts available"
 #          exit 1
 #        fi
 #        echo "✅ Current context: $CURRENT_CONTEXT"
@@ -360,7 +360,7 @@ jobs:
       # - name: Clean up existing namespace (if needed)
       #   run: |
       #     echo "🧹 Checking for existing namespace..."
-      #     if kubectl get namespace ${{ env.NAMESPACE }} &> /prod/null; then
+      #     if kubectl get namespace ${{ env.NAMESPACE }} &> /dev/null; then
       #       echo "📁 Found existing namespace, cleaning up resources..."
       #       kubectl delete all --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
       #       kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
@@ -426,15 +426,15 @@ jobs:
           
           # Check cluster connection
           echo "🔍 Checking cluster connection..."
-          CURRENT_CONTEXT=$(kubectl config current-context 2>/prod/null)
+          CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null)
           if [ -z "$CURRENT_CONTEXT" ]; then
             echo "❌ No current context found"
-            kubectl config get-contexts 2>/prod/null || echo "No contexts available"
+            kubectl config get-contexts 2>/dev/null || echo "No contexts available"
             exit 1
           fi
           echo "✅ Current context: $CURRENT_CONTEXT"
           
-          if ! kubectl cluster-info &> /prod/null; then
+          if ! kubectl cluster-info &> /dev/null; then
             echo "❌ Cannot connect to cluster"
             exit 1
           fi
@@ -497,7 +497,7 @@ jobs:
             echo "📋 Checking pod status:"
             kubectl get pods -n ${{ env.NAMESPACE }} -o wide || echo "No pods found"
             echo "📋 Checking deployment status:"
-            kubectl describe deployment -n ${{ env.NAMESPACE }} $(kubectl get deployment -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].metadata.name}' 2>/prod/null) || echo "No deployment found"
+            kubectl describe deployment -n ${{ env.NAMESPACE }} $(kubectl get deployment -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || echo "No deployment found"
             exit 1
           fi
           
@@ -508,7 +508,7 @@ jobs:
           echo "  helm list -n ${{ env.NAMESPACE }}"
           
           # Show service URL if available
-          SERVICE_URL=$(kubectl get svc -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/prod/null)
+          SERVICE_URL=$(kubectl get svc -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
           if [ ! -z "$SERVICE_URL" ]; then
             echo "🌐 Service URL: http://$SERVICE_URL"
           fi
