@@ -3,7 +3,7 @@ name: Deploy to Kubernetes
 on:
   workflow_call:
     inputs:
-      NAMESPACE: 
+      NAMESPACE:
         required: true
         type: string
       REGISTRY:
@@ -20,6 +20,10 @@ on:
         required: false
         type: string
         default: deploy/helm
+      # Путь к миграциям внутри Docker-образа, который будет запущен в kubernetes job
+      MIGRATIONS_PATH:
+        required: false
+        type: string
     secrets:
       GH_TOKEN:
         required: true
@@ -28,6 +32,9 @@ on:
 #      KUBE_CONFIG_DEV:
 #        required: true
       KUBE_CONFIG_PROD:
+        required: true
+      # Строка подключения к БД (go-migrate использует ее напрямую)
+      DB_URL:
         required: true
 
 
@@ -102,223 +109,122 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-#  deploy-dev:
-#    needs: build
-#    runs-on: ubuntu-latest
-#    if: github.ref == 'refs/heads/dev' || github.event.inputs.environment == 'dev'
-#    environment: development
-#    steps:
-#    - name: Checkout code
-#      uses: actions/checkout@v4
-#
-#    - name: Setup kubectl
-#      uses: azure/setup-kubectl@v3
-#      with:
-#        version: 'latest'
-#
-#    - name: Setup Helm
-#      uses: azure/setup-helm@v3
-#      with:
-#        version: 'latest'
-#
-#    - name: Configure kubectl
-#      run: |
-#        if [ -z "${{ secrets.KUBE_CONFIG_DEV }}" ]; then
-#          echo "❌ KUBE_CONFIG_DEV secret is not set"
-#          echo "Please add KUBE_CONFIG_DEV secret to your repository"
-#          echo "Settings → Secrets and variables → Actions"
-#          exit 1
-#        fi
-#
-#        echo "${{ secrets.KUBE_CONFIG_DEV }}" | base64 -d > kubeconfig
-#        chmod 600 kubeconfig
-#        echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
-#
-#        echo "Kubeconfig file size: $(wc -c < kubeconfig) bytes"
-#        if [ $(wc -c < kubeconfig) -lt 100 ]; then
-#          echo "❌ Kubeconfig file is too small, check your secret"
-#          exit 1
-#        fi
-#
-#        echo "Kubeconfig first 200 chars:"
-#        head -c 200 kubeconfig
-#        echo ""
-#        echo "Checking kubectl config:"
-#        kubectl config view --minify || echo "Failed to view config"
-#
-#    # - name: Clean up existing namespace (if needed)
-#    #   run: |
-#    #     echo "🧹 Checking for existing namespace..."
-#    #     if kubectl get namespace ${{ env.NAMESPACE }} &> /dev/null; then
-#    #       echo "📁 Found existing namespace, cleaning up resources..."
-#    #       kubectl delete all --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-#    #       kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-#    #       kubectl delete configmap --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-#    #       kubectl delete serviceaccount --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
-#    #       echo "✅ Namespace resources cleaned up"
-#    #     else
-#    #       echo "✅ No existing namespace found"
-#    #     fi
-#
-#    - name: Create image pull secret
-#      env:
-#        GH_USERNAME: ${{ secrets.GH_USERNAME }}
-#        GH_TOKEN: ${{ secrets.GH_TOKEN }}
-#      run: |
-#        echo "🔐 Setting up GitHub Container Registry image pull secret..."
-#
-#        if [ -z "$GH_TOKEN" ]; then
-#          echo "❌ GH_TOKEN secret is not set"
-#          exit 1
-#        fi
-#        if [ -z "$GH_USERNAME" ]; then
-#          echo "❌ GH_USERNAME secret is not set"
-#          exit 1
-#        fi
-#
-#        kubectl create secret docker-registry ghcr-secret \
-#          --docker-server=ghcr.io \
-#          --docker-username=$GH_USERNAME \
-#          --docker-password=$GH_TOKEN \
-#          --docker-email=kirillovvlad8@gmail.com \
-#          --namespace=${{ env.NAMESPACE }} \
-#          --dry-run=client -o yaml | kubectl apply -f -
-#
-#        kubectl label secret ghcr-secret -n ${{ env.NAMESPACE }} \
-#          "app.kubernetes.io/managed-by=external" \
-#          "helm.sh/resource-policy=keep" \
-#          --overwrite
-#
-#        echo "✅ Image pull secret created successfully!"
-#        kubectl get secret ghcr-secret -n ${{ env.NAMESPACE }} -o yaml | grep -E "(name:|type:|labels:)" || echo "Secret not found"
-#    - name: Set short SHA
-#      run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
-#    - name: Deploy to production
-#      run: |
-#        echo "🚀 Starting deployment..."
-#        echo "📋 Configuration:"
-#        echo "  Environment: prod"
-#        echo "  Release: ${{ env.NAMESPACE }}"
-#        echo "  Namespace: ${{ env.NAMESPACE }}"
-#        echo "  Image tag: dev-$SHORT_SHA"
-#
-#        # Validate environment
-#        if [[ "dev" != "dev" && "dev" != "prod" ]]; then
-#          echo "❌ Invalid environment: dev. Use 'dev' or 'prod'."
-#          exit 1
-#        fi
-#        echo "✅ Environment validated: dev"
-#
-#        # Set values file based on environment
-#        VALUES_FILE="values.prod.yaml"
-#        echo "📁 Using values file: $VALUES_FILE"
-#
-#        # Check cluster connection
-#        echo "🔍 Checking cluster connection..."
-#        CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null)
-#        if [ -z "$CURRENT_CONTEXT" ]; then
-#          echo "❌ No current context found"
-#          kubectl config get-contexts 2>/dev/null || echo "No contexts available"
-#          exit 1
-#        fi
-#        echo "✅ Current context: $CURRENT_CONTEXT"
-#
-#        if ! kubectl cluster-info &> /dev/null; then
-#          echo "❌ Cannot connect to cluster"
-#          exit 1
-#        fi
-#        echo "✅ Connected to cluster successfully"
-#
-#        cd ${{ env.KUBE_CONFIG_PATH }}
-#
-#        # Build Helm command
-#        # HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} . \
-#        #     --namespace ${{ env.NAMESPACE }} \
-#        #     --values $VALUES_FILE \
-#        #     --create-namespace \
-#        #     --wait \
-#        #     --timeout 10m \
-#        #     --set image.tag=dev-$SHORT_SHA"
-#
-#        HELM_CMD="helm upgrade --install ${{ env.NAMESPACE }} . \
-#        --namespace ${{ env.NAMESPACE }} \
-#        --values $VALUES_FILE \
-#        --create-namespace \
-#        --wait \
-#        --timeout 15m \
-#        --atomic \
-#        --set image.tag=dev-$SHORT_SHA \
-#        --set deployment.strategy.type=RollingUpdate \
-#        --set deployment.strategy.rollingUpdate.maxSurge=25% \
-#        --set deployment.strategy.rollingUpdate.maxUnavailable=0%"
-#
-#
-#        echo "🔧 Final Helm command:"
-#        echo "$HELM_CMD"
-#
-#        # Validate chart before deployment
-#        echo "🔍 Validating chart..."
-#        helm lint . || {
-#          echo "❌ Chart validation failed"
-#          exit 1
-#        }
-#
-#        echo "Executing: $HELM_CMD"
-#
-#        # Show namespace status before deployment
-#        echo "📁 Checking namespace status before deployment..."
-#        kubectl get namespace ${{ env.NAMESPACE }} --ignore-not-found=true || echo "Namespace does not exist yet"
-#
-#        # Execute Helm command
-#        echo "🔧 Executing Helm command..."
-#        eval $HELM_CMD
-#        HELM_EXIT_CODE=$?
-#
-#        # If Helm fails, show more debugging info
-#        if [ $HELM_EXIT_CODE -ne 0 ]; then
-#          echo "🔍 Helm deployment failed. Checking for issues..."
-#          echo "📋 Checking namespace resources:"
-#          kubectl get all -n ${{ env.NAMESPACE }} || echo "No resources found"
-#          echo "📋 Checking events:"
-#          kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.lastTimestamp' || echo "No events found"
-#          echo "📋 Checking pod logs:"
-#          kubectl logs -n ${{ env.NAMESPACE }} -l app.kubernetes.io/name=${{ env.NAMESPACE }} --tail=50 || echo "No logs found"
-#          echo "📋 Checking pod status:"
-#          kubectl get pods -n ${{ env.NAMESPACE }} -o wide || echo "No pods found"
-#          echo "📋 Checking deployment status:"
-#          kubectl describe deployment -n ${{ env.NAMESPACE }} $(kubectl get deployment -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || echo "No deployment found"
-#          exit 1
-#        fi
-#
-#        echo "✅ Deployment successful!"
-#        echo "📊 Check status with:"
-#        echo "  kubectl get pods -n ${{ env.NAMESPACE }}"
-#        echo "  kubectl get svc -n ${{ env.NAMESPACE }}"
-#        echo "  helm list -n ${{ env.NAMESPACE }}"
-#
-#        # Show service URL if available
-#        SERVICE_URL=$(kubectl get svc -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
-#        if [ ! -z "$SERVICE_URL" ]; then
-#          echo "🌐 Service URL: http://$SERVICE_URL"
-#        fi
-#
-#        # Show deployment info
-#        echo "📋 Deployment Info:"
-#        echo "  Image tag: dev-$SHORT_SHA"
-#        echo "  Environment: dev"
-#        echo "  Namespace: ${{ env.NAMESPACE }}"
-#        echo "  Release: ${{ env.NAMESPACE }}"
-#
-#    - name: Verify deployment
-#      run: |
-#        kubectl wait --for=condition=available --timeout=300s deployment/${{ env.NAMESPACE }} -n ${{ env.NAMESPACE }}
-
-  deploy-prod:
+  migrate-prod:
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' || github.event.inputs.environment == 'master'
     environment: production
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubectl
+        run: |
+          if [ -z "${{ secrets.KUBE_CONFIG_PROD }}" ]; then
+            echo "❌ KUBE_CONFIG_PROD secret is not set"
+            exit 1
+          fi
+
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > kubeconfig
+          chmod 600 kubeconfig
+          echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
+
+          echo "Kubeconfig file size: $(wc -c < kubeconfig) bytes"
+          if [ $(wc -c < kubeconfig) -lt 100 ]; then
+            echo "❌ Kubeconfig file is too small, check your secret"
+            exit 1
+          fi
+
+          echo "Checking kubectl config:"
+          kubectl config view --minify || echo "Failed to view config"
+
+      - name: Create image pull secret
+        env:
+          GH_USERNAME: ${{ secrets.GH_USERNAME }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "🔐 Setting up GitHub Container Registry image pull secret..."
+
+          if [ -z "$GH_TOKEN" ]; then
+            echo "❌ GH_TOKEN secret is not set"
+            exit 1
+          fi
+          if [ -z "$GH_USERNAME" ]; then
+            echo "❌ GH_USERNAME secret is not set"
+            exit 1
+          fi
+
+          kubectl create secret docker-registry ghcr-secret \
+            --docker-server=ghcr.io \
+            --docker-username=$GH_USERNAME \
+            --docker-password=$GH_TOKEN \
+            --docker-email=kirillovvlad8@gmail.com \
+            --namespace=${{ env.NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl label secret ghcr-secret -n ${{ env.NAMESPACE }} \
+            "app.kubernetes.io/managed-by=external" \
+            "helm.sh/resource-policy=keep" \
+            --overwrite
+
+      - name: Run go-migrate migrations
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+        run: |
+          set -euo pipefail
+
+          echo "🚀 Running migrations (image tag: master-${GITHUB_SHA::7})"
+          echo "📋 Configuration:"
+          echo "  Namespace: ${{ env.NAMESPACE }}"
+          echo "  Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:master-${GITHUB_SHA::7}"
+          echo "  Migrations path: ${{ inputs.MIGRATIONS_PATH }}"
+
+          # Уникальное имя job, чтобы не мешать параллельным запускам
+          JOB_NAME="${{ env.NAMESPACE }}-migrate-master-${GITHUB_SHA::7}"
+
+          kubectl delete job "$JOB_NAME" -n "${{ env.NAMESPACE }}" --ignore-not-found=true
+
+          cat <<'YAML' | kubectl apply -n "${{ env.NAMESPACE }}" -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: ${JOB_NAME}
+          spec:
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                imagePullSecrets:
+                  - name: ghcr-secret
+                containers:
+                  - name: migrate
+                    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:master-${GITHUB_SHA::7}
+                    env:
+                      - name: DB_URL
+                        value: "${DB_URL}"
+                    command:
+                      - "sh"
+                      - "-c"
+                      - |
+                        set -e
+                        # Если в образе бинарник называется migrate/go-migrate, поменяйте команду ниже.
+                        go-migrate -path "${{ inputs.MIGRATIONS_PATH }}" -database "$DB_URL" up
+          YAML
+
+          kubectl wait --for=condition=complete --timeout=15m job/"$JOB_NAME" -n "${{ env.NAMESPACE }}"
+
+  deploy-prod:
+    needs: [build, migrate-prod]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || github.event.inputs.environment == 'master'
+    environment: production
+    steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
 
