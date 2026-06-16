@@ -138,7 +138,6 @@ jobs:
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${GITHUB_REF_NAME}-${GITHUB_SHA::7}"
 
           echo "🚀 Running migrations"
-
           echo "  Image: $IMAGE"
 
           if [ -z "${MIGRATIONS_PATH:-}" ]; then
@@ -147,13 +146,20 @@ jobs:
           fi
 
           echo "  Migrations path: ${MIGRATIONS_PATH}"
-          
-          docker run --rm \
-            -e DB_URL="${DB_URL}" \
-            -e MIGRATIONS_PATH="${MIGRATIONS_PATH}" \
-            "$IMAGE" \
-            sh -c 'set -euo pipefail; go-migrate -path "$MIGRATIONS_PATH" -database "$DB_URL" up'
 
+          # Копируем миграции из образа на runner
+          CONTAINER_ID=$(docker create "$IMAGE")
+          mkdir -p /tmp/migrations
+          docker cp "$CONTAINER_ID:${MIGRATIONS_PATH}/." /tmp/migrations/
+          docker rm "$CONTAINER_ID"
+
+          # Запускаем официальный migrate образ
+          docker run --rm \
+            -v /tmp/migrations:/migrations \
+            migrate/migrate \
+            -path /migrations \
+            -database "$DB_URL" \
+            up
 
   deploy-prod:
     needs: [build]
