@@ -150,8 +150,9 @@ jobs:
           
           docker run --rm \
             -e DB_URL="${DB_URL}" \
+            -e MIGRATIONS_PATH="${MIGRATIONS_PATH}" \
             "$IMAGE" \
-            sh -c 'set -euo pipefail; go-migrate -path "${MIGRATIONS_PATH}" -database "$DB_URL" up'
+            sh -c 'set -euo pipefail; go-migrate -path "$MIGRATIONS_PATH" -database "$DB_URL" up'
 
 
   deploy-prod:
