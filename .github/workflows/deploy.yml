@@ -118,105 +118,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v3
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
         with:
-          version: 'latest'
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GH_TOKEN }}
 
-      - name: Configure kubectl
-        run: |
-          if [ -z "${{ secrets.KUBE_CONFIG_PROD }}" ]; then
-            echo "❌ KUBE_CONFIG_PROD secret is not set"
-            exit 1
-          fi
-
-          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > kubeconfig
-          chmod 600 kubeconfig
-          echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
-
-          echo "Kubeconfig file size: $(wc -c < kubeconfig) bytes"
-          if [ $(wc -c < kubeconfig) -lt 100 ]; then
-            echo "❌ Kubeconfig file is too small, check your secret"
-            exit 1
-          fi
-
-          echo "Checking kubectl config:"
-          kubectl config view --minify || echo "Failed to view config"
-
-      - name: Create image pull secret
-        env:
-          GH_USERNAME: ${{ secrets.GH_USERNAME }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "🔐 Setting up GitHub Container Registry image pull secret..."
-
-          if [ -z "$GH_TOKEN" ]; then
-            echo "❌ GH_TOKEN secret is not set"
-            exit 1
-          fi
-          if [ -z "$GH_USERNAME" ]; then
-            echo "❌ GH_USERNAME secret is not set"
-            exit 1
-          fi
-
-          kubectl create secret docker-registry ghcr-secret \
-            --docker-server=ghcr.io \
-            --docker-username=$GH_USERNAME \
-            --docker-password=$GH_TOKEN \
-            --docker-email=kirillovvlad8@gmail.com \
-            --namespace=${{ env.NAMESPACE }} \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-          kubectl label secret ghcr-secret -n ${{ env.NAMESPACE }} \
-            "app.kubernetes.io/managed-by=external" \
-            "helm.sh/resource-policy=keep" \
-            --overwrite
-
-      - name: Run go-migrate migrations
+      - name: Run go-migrate migrations (direct DB access)
         env:
           DB_URL: ${{ secrets.DB_URL }}
+          MIGRATIONS_PATH: ${{ inputs.MIGRATIONS_PATH }}
         run: |
           set -euo pipefail
 
-          echo "🚀 Running migrations (image tag: master-${GITHUB_SHA::7})"
-          echo "📋 Configuration:"
-          echo "  Namespace: ${{ env.NAMESPACE }}"
-          echo "  Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:master-${GITHUB_SHA::7}"
-          echo "  Migrations path: ${{ inputs.MIGRATIONS_PATH }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:master-${GITHUB_SHA::7}"
 
-          # Уникальное имя job, чтобы не мешать параллельным запускам
-          JOB_NAME="${{ env.NAMESPACE }}-migrate-master-${GITHUB_SHA::7}"
+          echo "🚀 Running migrations"
 
-          kubectl delete job "$JOB_NAME" -n "${{ env.NAMESPACE }}" --ignore-not-found=true
+          echo "  Image: $IMAGE"
+          echo "  Migrations path: ${MIGRATIONS_PATH}"
 
-          cat <<'YAML' | kubectl apply -n "${{ env.NAMESPACE }}" -f -
-          apiVersion: batch/v1
-          kind: Job
-          metadata:
-            name: ${JOB_NAME}
-          spec:
-            backoffLimit: 0
-            template:
-              spec:
-                restartPolicy: Never
-                imagePullSecrets:
-                  - name: ghcr-secret
-                containers:
-                  - name: migrate
-                    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:master-${GITHUB_SHA::7}
-                    env:
-                      - name: DB_URL
-                        value: "${DB_URL}"
-                    command:
-                      - "sh"
-                      - "-c"
-                      - |
-                        set -e
-                        # Если в образе бинарник называется migrate/go-migrate, поменяйте команду ниже.
-                        go-migrate -path "${{ inputs.MIGRATIONS_PATH }}" -database "$DB_URL" up
-          YAML
+          # Важно: миграции запускаем на runner'е напрямую, т.к. БД НЕ находится внутри k8s.
+          # Т.е. контейнер используем только как runtime для go-migrate.
+          docker run --rm \
+            -e DB_URL="${DB_URL}" \
+            "$IMAGE" \
+            sh -c 'set -euo pipefail; go-migrate -path "${MIGRATIONS_PATH}" -database "$DB_URL" up'
 
-          kubectl wait --for=condition=complete --timeout=15m job/"$JOB_NAME" -n "${{ env.NAMESPACE }}"
 
   deploy-prod:
     needs: [build, migrate-prod]
