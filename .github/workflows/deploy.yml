@@ -112,7 +112,7 @@ jobs:
   migrate-prod:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'main'
+    if: (github.ref == 'refs/heads/main' || github.event.inputs.environment == 'main') && inputs.MIGRATIONS_PATH != ''
     environment: production
     steps:
       - name: Checkout code
@@ -140,10 +140,14 @@ jobs:
           echo "🚀 Running migrations"
 
           echo "  Image: $IMAGE"
-          echo "  Migrations path: ${MIGRATIONS_PATH}"
 
-          # Важно: миграции запускаем на runner'е напрямую, т.к. БД НЕ находится внутри k8s.
-          # Т.е. контейнер используем только как runtime для go-migrate.
+          if [ -z "${MIGRATIONS_PATH:-}" ]; then
+            echo "ℹ️ MIGRATIONS_PATH is empty. Skipping migrations."
+            exit 0
+          fi
+
+          echo "  Migrations path: ${MIGRATIONS_PATH}"
+          
           docker run --rm \
             -e DB_URL="${DB_URL}" \
             "$IMAGE" \
@@ -151,7 +155,7 @@ jobs:
 
 
   deploy-prod:
-    needs: [build, migrate-prod]
+    needs: [build]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'main'
     environment: production
