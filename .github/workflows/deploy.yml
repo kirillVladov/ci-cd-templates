@@ -112,7 +112,7 @@ jobs:
   migrate-prod:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.event.inputs.environment == 'master'
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'main'
     environment: production
     steps:
       - name: Checkout code
@@ -221,7 +221,7 @@ jobs:
   deploy-prod:
     needs: [build, migrate-prod]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.event.inputs.environment == 'master'
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'main'
     environment: production
     steps:
 
